@@ -1,209 +1,203 @@
 import RPi.GPIO as GPIO
-from time import sleep, time
+import time
+import threading
+import sys
+import termios
+import tty
 
-# ==========================================
-# GPIO PIN SETUP
-# ==========================================
+# =========================
+# MOTOR PINS (L298N)
+# =========================
+LEFT_IN1  = 17
+LEFT_IN2  = 27
+RIGHT_IN1 = 22
+RIGHT_IN2 = 23
 
-# L298N Motor Driver Pins
-MOTOR_LEFT_FORWARD   = 17
-MOTOR_LEFT_BACKWARD  = 27
-MOTOR_RIGHT_FORWARD  = 22
-MOTOR_RIGHT_BACKWARD = 23
+# =========================
+# ULTRASONIC SENSOR
+# =========================
+TRIG = 5
+ECHO = 6
 
-# HC-SR04 Ultrasonic Sensor Pins
-ULTRASONIC_TRIGGER = 5
-ULTRASONIC_ECHO    = 6
-
-# ==========================================
+# =========================
 # SETTINGS
-# ==========================================
+# =========================
+OBSTACLE_DISTANCE_CM = 20
+TIMEOUT = 0.04
 
-STOP_DISTANCE = 20          # cm
-SENSOR_TIMEOUT = 0.04       # seconds
-READING_COUNT = 3
+MIN_CM = 2
+MAX_CM = 400
+SAMPLES = 3
 
-MIN_DISTANCE = 2
-MAX_DISTANCE = 400
+# =========================
+# GLOBAL STOP FLAG
+# =========================
+running = True
 
-# ==========================================
-# GPIO INITIALIZATION
-# ==========================================
-
+# =========================
+# GPIO SETUP
+# =========================
 GPIO.setmode(GPIO.BCM)
 GPIO.setwarnings(False)
 
-motor_pins = [
-    MOTOR_LEFT_FORWARD,
-    MOTOR_LEFT_BACKWARD,
-    MOTOR_RIGHT_FORWARD,
-    MOTOR_RIGHT_BACKWARD
-]
+motor_pins = [LEFT_IN1, LEFT_IN2, RIGHT_IN1, RIGHT_IN2]
 
 for pin in motor_pins:
     GPIO.setup(pin, GPIO.OUT)
 
-GPIO.setup(ULTRASONIC_TRIGGER, GPIO.OUT)
-GPIO.setup(ULTRASONIC_ECHO, GPIO.IN)
+GPIO.setup(TRIG, GPIO.OUT)
+GPIO.setup(ECHO, GPIO.IN)
 
-GPIO.output(ULTRASONIC_TRIGGER, False)
+GPIO.output(TRIG, False)
+time.sleep(2)
 
-print("Initializing sensor...")
-sleep(2)
+# =========================
+# MOTOR FUNCTIONS
+# =========================
+def forward():
+    GPIO.output(LEFT_IN1, GPIO.HIGH)
+    GPIO.output(LEFT_IN2, GPIO.LOW)
+    GPIO.output(RIGHT_IN1, GPIO.HIGH)
+    GPIO.output(RIGHT_IN2, GPIO.LOW)
 
-# ==========================================
-# MOTOR CONTROL FUNCTIONS
-# ==========================================
+def backward():
+    GPIO.output(LEFT_IN1, GPIO.LOW)
+    GPIO.output(LEFT_IN2, GPIO.HIGH)
+    GPIO.output(RIGHT_IN1, GPIO.LOW)
+    GPIO.output(RIGHT_IN2, GPIO.HIGH)
 
-def drive_forward():
-    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.HIGH)
-    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.LOW)
+def left():
+    GPIO.output(LEFT_IN1, GPIO.LOW)
+    GPIO.output(LEFT_IN2, GPIO.HIGH)
+    GPIO.output(RIGHT_IN1, GPIO.HIGH)
+    GPIO.output(RIGHT_IN2, GPIO.LOW)
 
-    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.HIGH)
-    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.LOW)
+def right():
+    GPIO.output(LEFT_IN1, GPIO.HIGH)
+    GPIO.output(LEFT_IN2, GPIO.LOW)
+    GPIO.output(RIGHT_IN1, GPIO.LOW)
+    GPIO.output(RIGHT_IN2, GPIO.HIGH)
 
-def drive_backward():
-    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.LOW)
-    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.HIGH)
-
-    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.LOW)
-    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.HIGH)
-
-def rotate_left():
-    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.LOW)
-    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.HIGH)
-
-    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.HIGH)
-    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.LOW)
-
-def rotate_right():
-    GPIO.output(MOTOR_LEFT_FORWARD, GPIO.HIGH)
-    GPIO.output(MOTOR_LEFT_BACKWARD, GPIO.LOW)
-
-    GPIO.output(MOTOR_RIGHT_FORWARD, GPIO.LOW)
-    GPIO.output(MOTOR_RIGHT_BACKWARD, GPIO.HIGH)
-
-def halt():
+def stop():
     for pin in motor_pins:
         GPIO.output(pin, GPIO.LOW)
 
-# ==========================================
-# DISTANCE SENSOR FUNCTIONS
-# ==========================================
-
+# =========================
+# DISTANCE SENSOR
+# =========================
 def measure_distance():
-    """
-    Measure distance using HC-SR04.
-    Returns:
-        float distance in cm
-        OR None if invalid
-    """
 
-    # Trigger pulse
-    GPIO.output(ULTRASONIC_TRIGGER, True)
-    sleep(0.00001)
-    GPIO.output(ULTRASONIC_TRIGGER, False)
+    GPIO.output(TRIG, True)
+    time.sleep(0.00001)
+    GPIO.output(TRIG, False)
 
-    timeout_limit = time() + SENSOR_TIMEOUT
+    timeout = time.time() + TIMEOUT
 
-    # Wait for echo HIGH
-    while GPIO.input(ULTRASONIC_ECHO) == 0:
-        pulse_start = time()
+    pulse_start = None
+    pulse_end = None
 
-        if pulse_start > timeout_limit:
+    while GPIO.input(ECHO) == 0:
+        pulse_start = time.time()
+        if pulse_start > timeout:
             return None
 
-    # Wait for echo LOW
-    while GPIO.input(ULTRASONIC_ECHO) == 1:
-        pulse_end = time()
-
-        if pulse_end > timeout_limit:
+    while GPIO.input(ECHO) == 1:
+        pulse_end = time.time()
+        if pulse_end > timeout:
             return None
 
-    pulse_duration = pulse_end - pulse_start
-
-    distance_cm = pulse_duration * 17150
-    distance_cm = round(distance_cm, 2)
-
-    if distance_cm < MIN_DISTANCE or distance_cm > MAX_DISTANCE:
+    if pulse_start is None or pulse_end is None:
         return None
 
-    return distance_cm
+    duration = pulse_end - pulse_start
+    distance = duration * 17150
 
-def get_average_distance():
-    """
-    Take several readings and average them.
-    """
-
-    collected = []
-
-    for _ in range(READING_COUNT):
-        result = measure_distance()
-
-        if result is not None:
-            collected.append(result)
-
-    if len(collected) == 0:
+    if distance < MIN_CM or distance > MAX_CM:
         return None
 
-    average = sum(collected) / len(collected)
+    return distance
 
-    return round(average, 2)
+def get_distance():
 
-# ==========================================
+    values = []
+
+    for _ in range(SAMPLES):
+        d = measure_distance()
+        if d is not None:
+            values.append(d)
+
+    if not values:
+        return None
+
+    return sum(values) / len(values)
+
+# =========================
+# KEY LISTENER (Q = STOP)
+# =========================
+def key_listener():
+    global running
+
+    fd = sys.stdin.fileno()
+    old = termios.tcgetattr(fd)
+
+    try:
+        tty.setraw(fd)
+
+        while running:
+            key = sys.stdin.read(1)
+
+            if key.lower() == 'q':
+                print("\nQ pressed — stopping robot")
+                running = False
+                stop()
+                break
+
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old)
+
+# =========================
 # OBSTACLE AVOIDANCE
-# ==========================================
+# =========================
+def avoid():
+    backward()
+    time.sleep(0.5)
 
-def evade_obstacle():
+    right()
+    time.sleep(0.4)
 
-    print("Obstacle detected!")
+    stop()
 
-    print("Backing up...")
-    drive_backward()
-    sleep(0.5)
+# =========================
+# START KEY THREAD
+# =========================
+threading.Thread(target=key_listener, daemon=True).start()
 
-    print("Turning...")
-    rotate_right()
-    sleep(0.4)
-
-    halt()
-
-# ==========================================
-# MAIN PROGRAM LOOP
-# ==========================================
-
-print("Robot running...")
-print("Press CTRL + C to stop.\n")
+# =========================
+# MAIN LOOP
+# =========================
+print("Robot started (press Q to stop)")
 
 try:
+    while running:
 
-    while True:
+        dist = get_distance()
 
-        current_distance = get_average_distance()
-
-        if current_distance is None:
-            print("Invalid sensor reading")
-            sleep(0.1)
+        if dist is None:
+            time.sleep(0.1)
             continue
 
-        print(f"Distance = {current_distance} cm")
+        print("Distance:", round(dist, 2), "cm")
 
-        if current_distance > STOP_DISTANCE:
-            drive_forward()
-
+        if dist > OBSTACLE_DISTANCE_CM:
+            forward()
         else:
-            halt()
-            evade_obstacle()
+            stop()
+            avoid()
 
-        sleep(0.1)
-
-except KeyboardInterrupt:
-
-    print("\nProgram stopped by user.")
+        time.sleep(0.1)
 
 finally:
-
-    halt()
+    running = False
+    stop()
     GPIO.cleanup()
-
-    print("GPIO cleanup complete.")
+    print("GPIO cleaned safely. Robot off.")
