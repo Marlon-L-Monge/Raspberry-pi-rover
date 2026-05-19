@@ -1,0 +1,100 @@
+from gpiozero import Motor
+from gpiozero.pins.lgpio import LGPIOFactory
+from gpiozero import Device
+import time
+import sys
+import termios
+import tty
+
+# =========================
+# FORCE CLEAN GPIO BACKEND
+# =========================
+Device.pin_factory = LGPIOFactory()
+
+# =========================
+# MOTORS (L298N)
+# =========================
+left_motor = Motor(forward=17, backward=27)
+right_motor = Motor(forward=22, backward=23)
+
+# =========================
+# SAFETY FUNCTIONS
+# =========================
+def stop():
+    left_motor.stop()
+    right_motor.stop()
+
+def forward():
+    left_motor.forward()
+    right_motor.forward()
+
+def backward():
+    left_motor.backward()
+    right_motor.backward()
+
+def left():
+    left_motor.backward()
+    right_motor.forward()
+
+def right():
+    left_motor.forward()
+    right_motor.backward()
+
+# =========================
+# KEY INPUT (NO curses, NO sudo)
+# =========================
+def get_key():
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+
+    try:
+        tty.setraw(fd)
+        key = sys.stdin.read(1)
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+
+    return key
+
+# =========================
+# MAIN LOOP
+# =========================
+print("Rover Control Ready")
+print("WASD to move | SPACE stop | Q quit")
+
+try:
+    while True:
+        key = get_key()
+
+        if key == 'w':
+            forward()
+            print("Forward")
+
+        elif key == 's':
+            backward()
+            print("Backward")
+
+        elif key == 'a':
+            left()
+            print("Left")
+
+        elif key == 'd':
+            right()
+            print("Right")
+
+        elif key == ' ':
+            stop()
+            print("Stop")
+
+        elif key == 'q':
+            break
+
+        time.sleep(0.05)
+
+except Exception as e:
+    print("Error:", e)
+
+finally:
+    # ALWAYS CLEAN UP
+    stop()
+    print("Motors stopped safely.")
+    print("Exiting cleanly.")
