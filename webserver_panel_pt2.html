@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>Rover Status</title>
+
+    <style>
+        body {
+            background: #111;
+            color: white;
+            font-family: Arial;
+            text-align: center;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            padding: 20px;
+        }
+
+        .card {
+            background: #1e1e1e;
+            padding: 20px;
+            border-radius: 10px;
+        }
+
+        .title {
+            color: #00ff99;
+        }
+
+        .value {
+            font-size: 22px;
+            margin-top: 10px;
+        }
+
+        .error {
+            color: red;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h1>ROVER SYSTEM STATUS</h1>
+
+    <div class="grid">
+
+        <div class="card">
+            <div class="title">CPU Usage</div>
+            <div class="value">{{ data.cpu }}%</div>
+        </div>
+
+        <div class="card">
+            <div class="title">RAM Usage</div>
+            <div class="value">{{ data.ram }}%</div>
+        </div>
+
+        <div class="card">
+            <div class="title">CPU Temperature</div>
+            <div class="value">{{ data.temp }}°C</div>
+        </div>
+
+        <div class="card">
+            <div class="title">IP Address</div>
+            <div class="value">{{ data.ip }}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Uptime</div>
+            <div class="value">{{ data.uptime }} sec</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Motor State</div>
+            <div class="value">{{ data.motor_state }}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Last Command</div>
+            <div class="value">{{ data.last_command }}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">GPIO State</div>
+            <div class="value">{{ data.gpio }}</div>
+        </div>
+
+        <div class="card">
+            <div class="title">Errors</div>
+            <div class="value error">
+                {% for e in data.errors %}
+                    {{ e }}<br>
+                {% endfor %}
+            </div>
+        </div>
+
+    </div>
+
+</body>
+</html>
